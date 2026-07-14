@@ -274,19 +274,13 @@ async function retryFixtureAction(options: {
         ACTIVATION_TIMEOUT_MS,
         options.fixtureProcess,
       );
-      // System Events may already report the fixture as frontmost while
-      // AppKit still treats the first mouse event as activation-only. Click
-      // the title bar through ComputerAgent, wait for the real AppKit state,
-      // then immediately send the action under test.
+      // System Events may report the fixture as frontmost while AppKit still
+      // reports inactive/non-key on hosted runners. Use a real title-bar tap
+      // to prime the window, but do not gate the target action on those
+      // inconsistent flags. The state predicate below proves whether the
+      // fixture actually received each input.
       focusCalls += 1;
       await options.focus();
-      await waitForJson(
-        options.stateFile,
-        normalizeState,
-        (state) => state.active && state.keyWindow,
-        ACTIVATION_TIMEOUT_MS,
-        options.fixtureProcess,
-      );
       actionCalls += 1;
       await options.action();
       const state = await waitForJson(
