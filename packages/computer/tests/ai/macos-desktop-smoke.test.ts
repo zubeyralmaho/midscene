@@ -234,7 +234,6 @@ async function waitForJson<T>(
 
 async function retryFixtureAction(options: {
   action: () => Promise<unknown>;
-  focus: () => Promise<unknown>;
   fixtureProcess: ChildProcessWithoutNullStreams;
   predicate: (state: FixtureState) => boolean;
   stateFile: string;
@@ -243,14 +242,10 @@ async function retryFixtureAction(options: {
 }): Promise<{
   state?: FixtureState;
   attempts: number;
-  actionCalls: number;
-  focusCalls: number;
   errors: string[];
 }> {
   const errors: string[] = [];
   let attempts = 0;
-  let actionCalls = 0;
-  let focusCalls = 0;
   for (const waitDuration of options.waitDurations) {
     attempts += 1;
     try {
@@ -266,22 +261,14 @@ async function retryFixtureAction(options: {
       await waitForJson(
         options.stateFile,
         normalizeState,
-        // GitHub's hosted macOS session reports the fixture as frontmost to
-        // System Events while AppKit still reports inactive/non-key. The
-        // fixture's activation signal is the reliable synchronization point;
-        // each caller subsequently verifies that the real input was received.
-        (state) => state.activationCount > beforeActivation.activationCount,
+        (state) =>
+          state.activationCount > beforeActivation.activationCount &&
+          state.active &&
+          state.keyWindow,
         ACTIVATION_TIMEOUT_MS,
         options.fixtureProcess,
       );
-      // System Events may report the fixture as frontmost while AppKit still
-      // reports inactive/non-key on hosted runners. Use a real title-bar tap
-      // to prime the window, but do not gate the target action on those
-      // inconsistent flags. The state predicate below proves whether the
-      // fixture actually received each input.
-      focusCalls += 1;
-      await options.focus();
-      actionCalls += 1;
+      await sleep(250);
       await options.action();
       const state = await waitForJson(
         options.stateFile,
@@ -290,12 +277,12 @@ async function retryFixtureAction(options: {
         waitDuration,
         options.fixtureProcess,
       );
-      return { state, attempts, actionCalls, focusCalls, errors };
+      return { state, attempts, errors };
     } catch (error) {
       errors.push(String(error));
     }
   }
-  return { attempts, actionCalls, focusCalls, errors };
+  return { attempts, errors };
 }
 
 function assertInside(inner: Bounds, outer: Bounds, label: string): void {
@@ -595,25 +582,9 @@ describe.skipIf(!RUN_LIVE_SMOKE)('macOS desktop live smoke', () => {
             'green smoke button',
           ),
         });
-      const titleBar = {
-        left: metadata.window.left + metadata.window.width / 2 - 60,
-        top: metadata.window.top + 4,
-        width: 120,
-        height: 18,
-      };
-      assertInside(titleBar, metadata.window, 'titleBar');
-      const focusFixture = () =>
-        agent!.callActionInActionSpace('Tap', {
-          locate: locate(
-            titleBar,
-            screenshotScale,
-            'macOS fixture window title bar',
-          ),
-        });
       const actionWaitDurations = [2_000, 3_000, 5_000, 8_000];
       const tapResult = await retryFixtureAction({
         action: tapButton,
-        focus: focusFixture,
         fixtureProcess,
         fixturePid,
         predicate: (state) => state.clickCount >= 1,
@@ -642,7 +613,6 @@ describe.skipIf(!RUN_LIVE_SMOKE)('macOS desktop live smoke', () => {
               'smoke text field',
             ),
           }),
-        focus: focusFixture,
         fixtureProcess,
         fixturePid,
         predicate: (state) => state.text === inputText,
@@ -669,7 +639,6 @@ describe.skipIf(!RUN_LIVE_SMOKE)('macOS desktop live smoke', () => {
               'smoke text field',
             ),
           }),
-        focus: focusFixture,
         fixtureProcess,
         fixturePid,
         predicate: (state) => state.lastKey === 'Enter',
@@ -705,7 +674,6 @@ describe.skipIf(!RUN_LIVE_SMOKE)('macOS desktop live smoke', () => {
               'scroll smoke area',
             ),
           }),
-        focus: focusFixture,
         fixtureProcess,
         fixturePid,
         predicate: (state) =>
@@ -733,20 +701,12 @@ describe.skipIf(!RUN_LIVE_SMOKE)('macOS desktop live smoke', () => {
       const locateTasks = dumpTasks.filter(
         (task) => task.type === 'Planning' && task.subType === 'Locate',
       );
-      const actionCalls =
-        tapResult.actionCalls +
-        inputResult.actionCalls +
-        keyResult.actionCalls +
-        scrollResult.actionCalls;
-      const focusCalls =
-        tapResult.focusCalls +
-        inputResult.focusCalls +
-        keyResult.focusCalls +
-        scrollResult.focusCalls;
-      const locateCalls = actionCalls + focusCalls;
-      evidence.actionCalls = actionCalls;
-      evidence.focusCalls = focusCalls;
-      expect(locateTasks).toHaveLength(locateCalls);
+      const actionAttempts =
+        tapResult.attempts +
+        inputResult.attempts +
+        keyResult.attempts +
+        scrollResult.attempts;
+      expect(locateTasks).toHaveLength(actionAttempts);
       expect(locateTasks.every((task) => task.hitBy?.from === 'Plan')).toBe(
         true,
       );
@@ -771,7 +731,7 @@ describe.skipIf(!RUN_LIVE_SMOKE)('macOS desktop live smoke', () => {
       const reportLocateTasks = reportTasks.filter(
         (task) => task.type === 'Planning' && task.subType === 'Locate',
       );
-      expect(reportLocateTasks).toHaveLength(locateCalls);
+      expect(reportLocateTasks).toHaveLength(actionAttempts);
       expect(
         reportLocateTasks.every((task) => task.hitBy?.from === 'Plan'),
       ).toBe(true);
