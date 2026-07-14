@@ -10,9 +10,20 @@ final class FlippedDocumentView: NSView {
 final class SmokeButton: NSButton {
   var onMouseDown: (() -> Void)?
 
+  override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+    true
+  }
+
   override func mouseDown(with event: NSEvent) {
     onMouseDown?()
     super.mouseDown(with: event)
+  }
+}
+
+@MainActor
+final class SmokeTextField: NSTextField {
+  override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+    true
   }
 }
 
@@ -80,7 +91,7 @@ final class FixtureController: NSObject, NSApplicationDelegate, NSTextFieldDeleg
       self.writeState()
     }
 
-    textField = NSTextField(frame: NSRect(x: 120, y: 275, width: 400, height: 44))
+    textField = SmokeTextField(frame: NSRect(x: 120, y: 275, width: 400, height: 44))
     textField.placeholderString = "Type smoke text"
     textField.delegate = self
     textField.target = self
