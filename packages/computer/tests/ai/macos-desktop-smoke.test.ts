@@ -70,6 +70,9 @@ interface FixtureState {
   active: boolean;
   keyWindow: boolean;
   activationCount: number;
+  focusRecoveryCount: number;
+  appResignCount: number;
+  keyResignCount: number;
   clickCount: number;
   buttonActionCount: number;
   text: string;
@@ -161,6 +164,12 @@ function normalizeState(value: unknown): FixtureState {
       raw.activationCount,
       'state.activationCount',
     ),
+    focusRecoveryCount: asFiniteNumber(
+      raw.focusRecoveryCount,
+      'state.focusRecoveryCount',
+    ),
+    appResignCount: asFiniteNumber(raw.appResignCount, 'state.appResignCount'),
+    keyResignCount: asFiniteNumber(raw.keyResignCount, 'state.keyResignCount'),
     clickCount: asFiniteNumber(raw.clickCount, 'state.clickCount'),
     buttonActionCount: asFiniteNumber(
       raw.buttonActionCount,

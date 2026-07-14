@@ -7,8 +7,18 @@ final class FlippedDocumentView: NSView {
 }
 
 @MainActor
+final class SmokeWindow: NSWindow {
+  override var canBecomeKey: Bool { true }
+  override var canBecomeMain: Bool { true }
+}
+
+@MainActor
 final class SmokeButton: NSButton {
   var onMouseDown: (() -> Void)?
+
+  override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+    true
+  }
 
   override func mouseDown(with event: NSEvent) {
     onMouseDown?()
@@ -17,7 +27,14 @@ final class SmokeButton: NSButton {
 }
 
 @MainActor
-final class FixtureController: NSObject, NSApplicationDelegate, NSTextFieldDelegate {
+final class SmokeTextField: NSTextField {
+  override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+    true
+  }
+}
+
+@MainActor
+final class FixtureController: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldDelegate {
   private let readyURL: URL
   private let stateURL: URL
 
@@ -26,8 +43,12 @@ final class FixtureController: NSObject, NSApplicationDelegate, NSTextFieldDeleg
   private var textField: NSTextField!
   private var scrollView: NSScrollView!
   private var activationSource: DispatchSourceSignal?
+  private var focusWatchdog: DispatchSourceTimer?
 
   private var activationCount = 0
+  private var focusRecoveryCount = 0
+  private var appResignCount = 0
+  private var keyResignCount = 0
   private var clickCount = 0
   private var buttonActionCount = 0
   private var lastKey = ""
@@ -51,7 +72,7 @@ final class FixtureController: NSObject, NSApplicationDelegate, NSTextFieldDeleg
       x: screen.visibleFrame.midX - windowSize.width / 2,
       y: screen.visibleFrame.midY - windowSize.height / 2
     )
-    window = NSWindow(
+    window = SmokeWindow(
       contentRect: NSRect(origin: origin, size: windowSize),
       styleMask: [.titled, .closable, .miniaturizable],
       backing: .buffered,
@@ -82,7 +103,7 @@ final class FixtureController: NSObject, NSApplicationDelegate, NSTextFieldDeleg
       self.writeState()
     }
 
-    textField = NSTextField(frame: NSRect(x: 120, y: 275, width: 400, height: 44))
+    textField = SmokeTextField(frame: NSRect(x: 120, y: 275, width: 400, height: 44))
     textField.placeholderString = "Type smoke text"
     textField.delegate = self
     textField.target = self
@@ -109,6 +130,7 @@ final class FixtureController: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     window.contentView?.addSubview(scrollView)
 
     installActivationSignal()
+    installFocusWatchdog()
     activateFixture()
     window.makeFirstResponder(textField)
     writeState()
@@ -120,6 +142,18 @@ final class FixtureController: NSObject, NSApplicationDelegate, NSTextFieldDeleg
 
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
     true
+  }
+
+  func applicationDidResignActive(_ notification: Notification) {
+    appResignCount += 1
+    writeState()
+    scheduleFocusRecovery()
+  }
+
+  func windowDidResignKey(_ notification: Notification) {
+    keyResignCount += 1
+    writeState()
+    scheduleFocusRecovery()
   }
 
   func controlTextDidChange(_ obj: Notification) {
@@ -154,9 +188,11 @@ final class FixtureController: NSObject, NSApplicationDelegate, NSTextFieldDeleg
   private func focusFixture() {
     NSApplication.shared.unhide(nil)
     window.orderFrontRegardless()
+    window.makeMain()
     window.makeKeyAndOrderFront(nil)
     NSApplication.shared.activate(ignoringOtherApps: true)
     NSRunningApplication.current.activate(options: [.activateAllWindows])
+    window.makeFirstResponder(textField)
   }
 
   private func installActivationSignal() {
@@ -167,6 +203,31 @@ final class FixtureController: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     }
     source.resume()
     activationSource = source
+  }
+
+  private func installFocusWatchdog() {
+    let source = DispatchSource.makeTimerSource(queue: .main)
+    source.schedule(deadline: .now() + .milliseconds(250), repeating: .milliseconds(250))
+    source.setEventHandler { [weak self] in
+      self?.recoverFocusIfNeeded()
+    }
+    source.resume()
+    focusWatchdog = source
+  }
+
+  private func scheduleFocusRecovery() {
+    DispatchQueue.main.async { [weak self] in
+      self?.recoverFocusIfNeeded()
+    }
+  }
+
+  private func recoverFocusIfNeeded() {
+    guard !NSApplication.shared.isActive || !window.isKeyWindow else {
+      return
+    }
+    focusRecoveryCount += 1
+    focusFixture()
+    writeState()
   }
 
   private func installMainMenu() {
@@ -256,6 +317,9 @@ final class FixtureController: NSObject, NSApplicationDelegate, NSTextFieldDeleg
         "active": NSApplication.shared.isActive,
         "keyWindow": window.isKeyWindow,
         "activationCount": activationCount,
+        "focusRecoveryCount": focusRecoveryCount,
+        "appResignCount": appResignCount,
+        "keyResignCount": keyResignCount,
         "clickCount": clickCount,
         "buttonActionCount": buttonActionCount,
         "text": textField.stringValue,
