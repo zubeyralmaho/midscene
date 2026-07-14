@@ -7,12 +7,29 @@ final class FlippedDocumentView: NSView {
 }
 
 @MainActor
+final class SmokeWindow: NSWindow {
+  override var canBecomeKey: Bool { true }
+  override var canBecomeMain: Bool { true }
+}
+
+@MainActor
 final class SmokeButton: NSButton {
   var onMouseDown: (() -> Void)?
+
+  override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+    true
+  }
 
   override func mouseDown(with event: NSEvent) {
     onMouseDown?()
     super.mouseDown(with: event)
+  }
+}
+
+@MainActor
+final class SmokeTextField: NSTextField {
+  override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+    true
   }
 }
 
@@ -51,7 +68,7 @@ final class FixtureController: NSObject, NSApplicationDelegate, NSWindowDelegate
       x: screen.visibleFrame.midX - windowSize.width / 2,
       y: screen.visibleFrame.midY - windowSize.height / 2
     )
-    window = NSWindow(
+    window = SmokeWindow(
       contentRect: NSRect(origin: origin, size: windowSize),
       styleMask: [.titled, .closable, .miniaturizable],
       backing: .buffered,
@@ -66,6 +83,8 @@ final class FixtureController: NSObject, NSApplicationDelegate, NSWindowDelegate
     // computer-input smoke checks are delivered to their intended target.
     window.level = .floating
     window.delegate = self
+    window.level = .floating
+    window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
     button = SmokeButton(title: "Midscene Smoke Button", target: self, action: #selector(buttonClicked))
     button.frame = NSRect(x: 190, y: 370, width: 260, height: 72)
@@ -81,7 +100,7 @@ final class FixtureController: NSObject, NSApplicationDelegate, NSWindowDelegate
       self.writeState()
     }
 
-    textField = NSTextField(frame: NSRect(x: 120, y: 275, width: 400, height: 44))
+    textField = SmokeTextField(frame: NSRect(x: 120, y: 275, width: 400, height: 44))
     textField.placeholderString = "Type smoke text"
     textField.delegate = self
     textField.target = self
@@ -168,10 +187,12 @@ final class FixtureController: NSObject, NSApplicationDelegate, NSWindowDelegate
 
   private func focusFixture() {
     NSApplication.shared.unhide(nil)
-    window.orderFrontRegardless()
-    window.makeKeyAndOrderFront(nil)
-    NSApplication.shared.activate(ignoringOtherApps: true)
+    NSApplication.shared.setActivationPolicy(.regular)
+    NSApplication.shared.activate()
     NSRunningApplication.current.activate(options: [.activateAllWindows])
+    window.orderFrontRegardless()
+    window.makeMain()
+    window.makeKeyAndOrderFront(nil)
     window.makeFirstResponder(textField)
   }
 
