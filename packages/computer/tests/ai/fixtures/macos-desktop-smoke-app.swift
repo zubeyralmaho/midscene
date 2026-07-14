@@ -10,10 +10,6 @@ final class FlippedDocumentView: NSView {
 final class SmokeButton: NSButton {
   var onMouseDown: (() -> Void)?
 
-  override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
-    true
-  }
-
   override func mouseDown(with event: NSEvent) {
     onMouseDown?()
     super.mouseDown(with: event)
@@ -21,14 +17,7 @@ final class SmokeButton: NSButton {
 }
 
 @MainActor
-final class SmokeTextField: NSTextField {
-  override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
-    true
-  }
-}
-
-@MainActor
-final class FixtureController: NSObject, NSApplicationDelegate, NSTextFieldDelegate {
+final class FixtureController: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTextFieldDelegate {
   private let readyURL: URL
   private let stateURL: URL
 
@@ -76,6 +65,7 @@ final class FixtureController: NSObject, NSApplicationDelegate, NSTextFieldDeleg
     // frontmost. Keep this test-only fixture above the browser so the
     // computer-input smoke checks are delivered to their intended target.
     window.level = .floating
+    window.delegate = self
 
     button = SmokeButton(title: "Midscene Smoke Button", target: self, action: #selector(buttonClicked))
     button.frame = NSRect(x: 190, y: 370, width: 260, height: 72)
@@ -91,7 +81,7 @@ final class FixtureController: NSObject, NSApplicationDelegate, NSTextFieldDeleg
       self.writeState()
     }
 
-    textField = SmokeTextField(frame: NSRect(x: 120, y: 275, width: 400, height: 44))
+    textField = NSTextField(frame: NSRect(x: 120, y: 275, width: 400, height: 44))
     textField.placeholderString = "Type smoke text"
     textField.delegate = self
     textField.target = self
@@ -129,6 +119,22 @@ final class FixtureController: NSObject, NSApplicationDelegate, NSTextFieldDeleg
 
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
     true
+  }
+
+  func applicationDidBecomeActive(_ notification: Notification) {
+    writeState()
+  }
+
+  func applicationDidResignActive(_ notification: Notification) {
+    writeState()
+  }
+
+  func windowDidBecomeKey(_ notification: Notification) {
+    writeState()
+  }
+
+  func windowDidResignKey(_ notification: Notification) {
+    writeState()
   }
 
   func controlTextDidChange(_ obj: Notification) {
