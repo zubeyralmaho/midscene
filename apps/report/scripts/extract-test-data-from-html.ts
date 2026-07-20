@@ -15,6 +15,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { parseImageScripts } from '../../../packages/core/src/dump/html-utils';
 import { restoreImageReferences } from '../../../packages/core/src/dump/screenshot-restoration';
+import { resolveScreenshotFallbackPath } from '../src/utils/screenshot-source';
 
 // --- arg parsing ---
 function getArg(name: string): string | undefined {
@@ -70,13 +71,16 @@ console.log(`Found ${dumps.length} dump scripts`);
 // --- resolve image references in each dump ---
 const resolveImage = (ref: {
   id: string;
+  mimeType?: unknown;
   storage?: string;
   path?: string;
 }): string => {
   const cached = imageMap[ref.id];
   if (cached) return cached;
-  if (ref.storage === 'file' && ref.path) return ref.path;
-  return `./screenshots/${ref.id}.png`;
+  return resolveScreenshotFallbackPath({
+    ...ref,
+    storage: ref.storage === 'file' ? 'file' : 'inline',
+  });
 };
 
 for (const dump of dumps) {
